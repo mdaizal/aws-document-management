@@ -1,34 +1,66 @@
-var builder = WebApplication.CreateBuilder(args);
+using aws_document_management.Data;
+using aws_document_management.Documents;
+using aws_document_management.Storage;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Http.Features;
+using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
 
-// Add services to the container.
+var builder = WebApplication.CreateBuilder(args);
+var connectionString = builder.Configuration.GetConnectionString("Documents")
+    ?? throw new InvalidOperationException("Set ConnectionStrings__Documents before starting the API.");
+builder.Services.AddDbContext<DocumentDbContext>(options => options.UseNpgsql(connectionString));
+builder.Services.AddIdentity<IdentityUser, IdentityRole>()
+    .AddEntityFrameworkStores<DocumentDbContext>();
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+    options.Events.OnRedirectToLogin = context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+        return Task.CompletedTask;
+    };
+});
+builder.Services.AddAuthorization();
+builder.Services.AddAntiforgery(options => options.HeaderName = "X-XSRF-TOKEN");
+builder.Services.Configure<FormOptions>(options =>
+    options.MultipartBodyLengthLimit = DocumentEndpoints.RequestLimit);
+builder.WebHost.ConfigureKestrel(options => options.Limits.MaxRequestBodySize = DocumentEndpoints.RequestLimit);
+builder.Services.AddOpenApi();
+builder.Services.AddProblemDetails();
+builder.Services.AddSingleton<IDocumentStorage, LocalDocumentStorage>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-
-app.UseHttpsRedirection();
-
-var summaries = new[]
+if (args.Contains("--seed-demo-users", StringComparer.Ordinal))
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    if (!app.Environment.IsDevelopment())
+        throw new InvalidOperationException("Demo accounts can only be seeded in Development.");
 
-app.MapGet("/weatherforecast", () =>
+    await DemoUsers.SeedAsync(app.Services, app.Configuration);
+    return;
+}
+
+app.UseExceptionHandler(new ExceptionHandlerOptions
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
+    StatusCodeSelector = exception => exception is BadHttpRequestException badRequest
+        ? badRequest.StatusCode : StatusCodes.Status500InternalServerError
 });
+app.UseStatusCodePages();
+app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseAntiforgery();
+app.MapDocumentAuth();
+app.MapDocuments();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference(options => options.DisableDefaultFonts());
+}
 
 app.Run();
-
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}

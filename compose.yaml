@@ -1,0 +1,18 @@
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: documents
+      POSTGRES_DB: documents
+      POSTGRES_PASSWORD: ${DOCUMENTS_DB_PASSWORD:?Set DOCUMENTS_DB_PASSWORD}
+    ports:
+      - "127.0.0.1:${DOCUMENTS_DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "documents", "-d", "documents"]
+      interval: 2s
+      timeout: 3s
+      retries: 15
+volumes:
+  postgres-data:
