@@ -1,0 +1,6 @@
+@aws_document_management_HostAddress = http://localhost:5107
+
+GET {{aws_document_management_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
