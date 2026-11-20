@@ -1,6 +1,48 @@
-@aws_document_management_HostAddress = http://localhost:5107
+@baseUrl = http://localhost:5107
+@anonymousToken = replace-with-token-from-first-request
+@sessionToken = replace-with-fresh-token-after-login
+@alicePassword = {{$dotenv DemoUsers__AlicePassword}}
+@documentId = replace-with-upload-result-id
 
-GET {{aws_document_management_HostAddress}}/weatherforecast/
-Accept: application/json
+### Obtain a token and cookie
+GET {{baseUrl}}/api/auth/antiforgery
 
-###
+### Sign in using the cookie from the previous response
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+X-XSRF-TOKEN: {{anonymousToken}}
+
+{"userName":"alice","password":"{{alicePassword}}"}
+
+### Refresh the token after signing in
+GET {{baseUrl}}/api/auth/antiforgery
+
+### Upload a local sample PDF in an ignored directory
+POST {{baseUrl}}/api/documents
+X-XSRF-TOKEN: {{sessionToken}}
+Content-Type: multipart/form-data; boundary=sample-upload
+
+--sample-upload
+Content-Disposition: form-data; name="title"
+
+Sample invoice
+--sample-upload
+Content-Disposition: form-data; name="tags"
+
+finance
+--sample-upload
+Content-Disposition: form-data; name="file"; filename="sample.pdf"
+Content-Type: application/pdf
+
+< ./.local/sample.pdf
+--sample-upload--
+
+### Search
+GET {{baseUrl}}/api/documents?title=invoice&tag=finance
+
+### Download
+GET {{baseUrl}}/api/documents/{{documentId}}/download
+
+### Sign out
+POST {{baseUrl}}/api/auth/logout
+X-XSRF-TOKEN: {{sessionToken}}
